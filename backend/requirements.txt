@@ -1,0 +1,7 @@
+# requirements.txt = packages that must exist inside the container at runtime
+
+# Fastapi = core web framework that lets us make API endpoints
+fastapi[standard]
+
+# uvicorn = the web server that runs FastAPI so it can accept requests
+uvicorn[standard]
