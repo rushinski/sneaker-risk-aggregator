@@ -10,7 +10,7 @@ deploy:
     - echo "Runner: $CI_RUNNER_DESCRIPTION ($CI_RUNNER_EXECUTABLE_ARCH)"
     - docker version
     - docker compose version
-    # surface envs (optional echo, but good for sanity—doesn't print secrets)
+    # surface envs (optional echo, but good for sanity-doesn't print secrets)
     - test -n "$POSTGRES_USER" && echo "POSTGRES_USER set"
     - test -n "$POSTGRES_DB" && echo "POSTGRES_DB set"
   script:
