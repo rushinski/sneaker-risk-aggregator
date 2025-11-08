@@ -8,7 +8,7 @@ deploy:
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
   before_script:
-    - echo "Runner: $CI_RUNNER_DESCRIPTION"
+    - 'echo "Runner: $CI_RUNNER_DESCRIPTION"'
     - docker version
     - docker compose version
     - test -n "$POSTGRES_USER" && echo "POSTGRES_USER set"
