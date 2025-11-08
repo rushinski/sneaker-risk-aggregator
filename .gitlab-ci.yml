@@ -3,7 +3,8 @@ stages:
 
 deploy:
   stage: deploy
-  tags: ["prod"]
+  tags: 
+    - "prod"
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
   before_script:
