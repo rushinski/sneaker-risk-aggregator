@@ -16,5 +16,3 @@ deploy:
   script:
     - echo "Deploying with compose.yaml"
     - docker compose -f compose.yaml up -d --build
-    
-# line ending normalization
