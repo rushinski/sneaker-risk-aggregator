@@ -3,16 +3,15 @@ stages:
 
 deploy:
   stage: deploy
-  tags: ["prod"]           # <-- replace with your runner's actual tag
+  tags: ["prod"]
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
   before_script:
-    - echo "Runner: $CI_RUNNER_DESCRIPTION ($CI_RUNNER_EXECUTABLE_ARCH)"
+    - echo "Runner: $CI_RUNNER_DESCRIPTION"
     - docker version
     - docker compose version
-    # surface envs (optional echo, but good for sanity-doesn't print secrets)
     - test -n "$POSTGRES_USER" && echo "POSTGRES_USER set"
     - test -n "$POSTGRES_DB" && echo "POSTGRES_DB set"
   script:
-    - echo "Deploying with compose at repo root"
+    - echo "Deploying with compose.yaml"
     - docker compose -f compose.yaml up -d --build

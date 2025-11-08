@@ -20,7 +20,7 @@ services:
     # This service runs OUR python fastapi app
     api:
         # Build our app image from our Dockerfile in this folder
-        build: .
+        build: ./backend
 
         # Wait for the db container to exist before starting api
         depends_on:
