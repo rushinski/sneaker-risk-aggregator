@@ -1,0 +1,65 @@
+name: deploy
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+# Prevent overlapping deploys
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+# Minimal permissions for a self-hosted runner build on-box
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Compose build & up on droplet
+    runs-on: self-hosted
+    timeout-minutes: 15
+
+    env:
+      # Compose will read these from the process env at runtime.
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      # (Optional) Add any other env your compose.yaml references.
+
+    steps:
+      - name: Show runner & docker versions
+        run: |
+          echo "Runner labels: $RUNNER_OS / $RUNNER_ARCH"
+          docker version
+          docker compose version
+
+      - name: Check required env are set
+        run: |
+          test -n "$POSTGRES_USER" && echo "POSTGRES_USER set" || (echo "POSTGRES_USER missing" && exit 1)
+          test -n "$POSTGRES_DB" && echo "POSTGRES_DB set" || (echo "POSTGRES_DB missing" && exit 1)
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy with compose (root compose.yaml)
+        run: |
+          echo "Deploying with compose.yaml from repo root..."
+          docker compose -f compose.yaml up -d --build
+
+      - name: Post-deploy health check (from runner host)
+        run: |
+          # Runner is on the droplet; use localhost to avoid egress
+          for i in {1..10}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/healthz || true)
+            if [ "$code" = "200" ]; then
+              echo "Healthz OK (200)"; exit 0
+            fi
+            echo "Healthz not ready (code=$code). Retry $i/10..."; sleep 2
+          done
+          echo "Health check failed after retries"; exit 1
+
+      - name: (On failure) Show last API logs
+        if: failure()
+        run: |
+          docker compose logs --tail=200 api || true
