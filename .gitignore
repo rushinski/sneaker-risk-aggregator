@@ -1,0 +1,12 @@
+# local secrets
+.env
+
+# python
+__pycache__/
+*.pyc
+
+# docker cruft
+*.log
+
+# node (if this repo ever has frontend)
+node_modules/

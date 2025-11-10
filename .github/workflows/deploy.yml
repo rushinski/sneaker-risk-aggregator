@@ -1,52 +1,101 @@
+# This is our header
 name: deploy
 
+# Workflow will run only if pushed to main or maunally clicked in GH UI
 on:
   push:
-    branches: [ "main" ]
+    tags: 
+      - 'v*'
   workflow_dispatch:
 
-# Prevent overlapping deploys
+# Prevent overlapping deploys. If a new deploy happens will one is already running the old one gets canceled
 concurrency:
   group: deploy
   cancel-in-progress: true
 
-# Minimal permissions for a self-hosted runner build on-box
+# Allows checkout to read repo code
 permissions:
   contents: read
 
+# Defines 1 job named deploy 
 jobs:
   deploy:
-    name: Compose build & up on droplet
+    name: Tag-driven strict version deploy
+    # Job must run on the droplet NOT GitHub Cloud
     runs-on: self-hosted
-    timeout-minutes: 15
+    # If the job takes longer then 15 minutes it will fail
+    timeout-minutes: 20
 
     env:
       # Compose will read these from the process env at runtime.
       POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-      # (Optional) Add any other env your compose.yaml references.
 
     steps:
+      # Logs the OS and Docker version for us to see. This is souly for us to see visually 
       - name: Show runner & docker versions
         run: |
           echo "Runner labels: $RUNNER_OS / $RUNNER_ARCH"
           docker version
           docker compose version
 
+      # If the secerts are not present the job will fail immediately
       - name: Check required env are set
         run: |
           test -n "$POSTGRES_USER" && echo "POSTGRES_USER set" || (echo "POSTGRES_USER missing" && exit 1)
+          test -n "$POSTGRES_PASSWORD" && echo "POSTGRES_PASSWORD set" || (echo "POSTGRES_PASSWORD missing" && exit 1)
           test -n "$POSTGRES_DB" && echo "POSTGRES_DB set" || (echo "POSTGRES_DB missing" && exit 1)
 
+      # Downloads our code into the runner work folder
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          ref="${GITHUB_REF##*/}"           # ex: v1.4.7
+          echo "version=$ref" >> $GITHUB_OUTPUT
+      
+      - name: Validate semver w/ prefix `v`
+        run: |
+          if [[ ! "${{ steps.version.outputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version tag format."
+            exit 1
+          fi
+
+      - name: Enforce hard strict forward-only semver
+        run: |
+          LEDGER=/opt/sra/last_version
+
+          NEW="${{ steps.version.outputs.version }}"
+
+          if [ -f "$LEDGER" ]; then
+            OLD=$(cat $LEDGER)
+            printf "last deployed: %s\n" "$OLD"
+            printf "candidate....: %s\n" "$NEW"
+
+            # numeric compare
+            nO=${OLD#v}; IFS='.' read oM oN oP <<< "$nO"
+            nN=${NEW#v}; IFS='.' read nM nNw nP <<< "$nN"
+
+            # compare tuple lexicographically
+            if [ "$nM" -lt "$oM" ] || \
+               { [ "$nM" -eq "$oM" ] && [ "$nNw" -lt "$oN" ]; } || \
+               { [ "$nM" -eq "$oM" ] && [ "$nNw" -eq "$oN" ] && [ "$nP" -le "$oP" ]; }
+            then
+              echo "ERROR: version not forward."
+              exit 1
+            fi
+          fi
+
+      # Actual deploy. Build container images and bring up services detached.
       - name: Deploy with compose (root compose.yaml)
         run: |
           echo "Deploying with compose.yaml from repo root..."
           docker compose -f compose.yaml up -d --build
 
+      # curl localhost:8000/healthz. If status 200 - success. Else wait 10 seconds and try again. If it fails 10 tens job fails
       - name: Post-deploy health check (from runner host)
         run: |
           # Runner is on the droplet; use localhost to avoid egress
@@ -59,6 +108,11 @@ jobs:
           done
           echo "Health check failed after retries"; exit 1
 
+      - name: Update version ledger
+        run: |
+          echo "${{ steps.version.outputs.version }}" | sudo tee /opt/sra/last_version >/dev/null
+
+      # If the job fails we log the last 200 lines of the api for debugging
       - name: (On failure) Show last API logs
         if: failure()
         run: |
